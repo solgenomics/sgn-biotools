@@ -17,7 +17,7 @@ Lukas Mueller <lam87@conrell.edu>
 
 use strict;
 
-$cutoff = 1e-20;
+my $cutoff = 1e-20;
 
 my %q_best_match = ();
 my %q_best_score = ();
