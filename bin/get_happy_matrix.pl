@@ -31,7 +31,8 @@ if (!$ARGV[0]) {
 }
 
 # V0.0.2 includes rh_tsp_map input matrix as a result and a statistics file
-my $VERSION = "0.0.2";
+# V0.0.3 is ready to accept any number of aliquots and is independent of the read name
+my $VERSION = "0.0.3";
 
 # ------------------------------------------------------------------------------ store options in hash
 my %Options=get_options_and_params();
@@ -231,7 +232,7 @@ sub read_fasta {
 		my $seq_name = $seq_obj->id();
 		my $seq_fasta = $seq_obj->seq();
 	
-		if ($seq_name =~ m/^([a-t]{4})_D3B4KKQ1\:291\:D17NUACXX\:8\:(.+)/i) {
+		if ($seq_name =~ m/^([a-t]{4}\d*)_(.+)/i) {
 			$tag = $1;
 			$name = $2;
 			$reads_by_aliquot{$tag}++;
@@ -254,7 +255,7 @@ sub read_fasta {
 		if (length($seq_fasta) >= $opts{length}) {
 			$seq = substr($seq_fasta,0,($opts{length}-1));
 		} else {
-			print STDOUT "D3B4KKQ1\:291\:D17NUACXX\:8\:$seq_name was shorter than ".$opts{length}." bp\n";
+			print STDOUT "$seq_name was shorter than ".$opts{length}." bp\n";
 			next;
 		}
 		
@@ -263,7 +264,7 @@ sub read_fasta {
 		
 		# save markers in hash and count their ocurrence in each aliquot
 		if (!$markers{$seq}) {
-			my @tag_num=(0)x48;
+			my @tag_num=(0) x scalar(keys(%tags));
 			$markers{$seq} = \@tag_num;
 			$markers{$seq}[$tag_position] = 1;
 			$marker_name{$seq}=$seq_name;
