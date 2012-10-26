@@ -32,7 +32,8 @@ if (!$ARGV[0]) {
 
 # V0.0.2 includes rh_tsp_map input matrix as a result and a statistics file
 # V0.0.3 is ready to accept any number of aliquots and is independent of the read name
-my $VERSION = "0.0.3";
+# v0.0.4 memory usage was improved fixing duplicated variables that were referenced
+my $VERSION = "0.0.4";
 
 # ------------------------------------------------------------------------------ store options in hash
 my %Options=get_options_and_params();
@@ -76,8 +77,26 @@ sub get_options_and_params {
 
 # check if the options and parameters are right and sufficient for the execution
 sub check_options {
-	my $opt = shift;
-	my %options = %$opt;
+	my $options = shift;
+	
+	# -------------------------------------------- check mandatory options
+	if (!$$options{fasta}) {
+		print STDERR "\n---> ERROR: a fasta file must be provided <---\n\n";
+		
+		help_msg();
+		exit;
+	}
+	
+	if (!$$options{tags}) {
+		print STDERR "\n---> ERROR: a list of tags must be provided <---\n\n";
+		
+		help_msg();
+		exit;
+	}
+	
+	# -------------------------------------------- check files
+	check_file_exist($$options{fasta},"---> File ".$$options{fasta}." was not found. A file with the marker reads is required <---");
+	check_file_exist($$options{tags},"---> File ".$$options{tags}." was not found. A file with tags used for each aliquot of the happy mapping is required:\n\nacag\nactg\nagac\n...\n");
 	
 	# -------------------------------------------- removing old files and making new directories
 	if (-e "output/") {
@@ -86,13 +105,13 @@ sub check_options {
 	mkdir ("output");
 	
 	#-------------------------------------------- print option chosed
-	if ($options{verbose}) {
+	if ($$options{verbose}) {
 		version_msg();
 		
 		print STDOUT "\n-------------- PARAMETERS AND OPTION CHOSEN --------------\n";
-		foreach my $opt (keys %options) {
+		foreach my $opt (keys %$options) {
 			my $sp = (10 - length($opt));
-			print STDOUT "${opt}".(" "x$sp)."  ==>  $options{$opt}\n";
+			print STDOUT "${opt}".(" "x$sp)."  ==>  $$options{$opt}\n";
 		}
 		print STDOUT "----------------------------------------------------------\n";
 	}
@@ -103,26 +122,14 @@ sub check_options {
 	print $stats_fh "\n$0 v$VERSION\n";
 	
 	print $stats_fh "\n-------------- PARAMETERS AND OPTION CHOSEN --------------\n";
-	foreach my $opt (keys %options) {
+	foreach my $opt (keys %$options) {
 		my $sp = (10 - length($opt));
-		print $stats_fh "${opt}".(" "x$sp)."  ==>  $options{$opt}\n";
+		print $stats_fh "${opt}".(" "x$sp)."  ==>  $$options{$opt}\n";
 	}
 	print $stats_fh "----------------------------------------------------------\n";
 	close($stats_fh);
 	
-	# -------------------------------------------- check mandatory options
-	if ((!$options{fasta}) || (!$options{tags})) {
-		print STDERR "\nERROR: a fasta file and a list of tags must be provided\n\n";
-		
-		help_msg();
-		exit;
-	}
-	
-	# -------------------------------------------- check files
-	check_file_exist($options{fasta},"File ".$options{fasta}." was not found. A file with the marker reads is required");
-	check_file_exist($options{tags},"File ".$options{tags}." was not found. A file with tags used for each aliquot of the happy mapping is required:\n\nacag\nactg\nagac\n...\n");
-	
-	if ($options{verbose}) {
+	if ($$options{verbose}) {
 		print STDOUT "--- YOUR PARAMETERS AND OPTIONS WERE CORRECTLY CHECKED ---\n";
 	}
 }
@@ -183,33 +190,25 @@ sub load_tags{
 	
 	my $tags_file = shift;
 	my %tags_h;
-	
 	my $counter = 0;
-	# my $head = 'locus_name';
+	
 	open (my $tag_fh, $tags_file) || die ("\nERROR: the file '$tags_file' could not be found\n");
 	while (my $line = <$tag_fh>) {
 		chomp($line);
-		# $head = "$head\t".uc($line);
 		$tags_h{uc($line)} = $counter;
 		$counter++;
 	}
 	return (\%tags_h);
-	# return (\%tags_h,$head);
 }
 
 # read a fasta file and save all the info about the markers and aliquots
 sub read_fasta {
 	
-	my $opt_h = shift;
-	my %opts = %$opt_h;
-	
-	my $tag_h = shift;
-	my %tags = %$tag_h;
-	
-	my $input_fasta = Bio::SeqIO->new(-file => $opts{fasta}, -format => 'fasta');
+	my $opts = shift;
+	my $tags = shift;
 	
 	my $counter = 0;
-	my $tag = '';
+	my $tag_seq = '';
 	my $name = '';
 	my %markers; # save markers and their ocurrence in each aliquot
 	my %marker_name; # save markers names and their sequences
@@ -221,9 +220,11 @@ sub read_fasta {
 	my $max_reads_with_n = 0;
 	my %discarded_aliquots;
 	
-	if ($opts{verbose}) {
+	if ($$opts{verbose}) {
 		print "Reads  Markers\n";
 	}
+	
+	my $input_fasta = Bio::SeqIO->new(-file => $$opts{fasta}, -format => 'fasta');
 	
 	while(my $seq_obj = $input_fasta->next_seq()) {
 		
@@ -233,9 +234,9 @@ sub read_fasta {
 		my $seq_fasta = $seq_obj->seq();
 	
 		if ($seq_name =~ m/^([a-t]{4}\d*)_(.+)/i) {
-			$tag = $1;
+			$tag_seq = $1;
 			$name = $2;
-			$reads_by_aliquot{$tag}++;
+			$reads_by_aliquot{$tag_seq}++;
 		} else {
 			print "wrong sequence name: $seq_name\n";
 		}
@@ -246,25 +247,25 @@ sub read_fasta {
 
 			if ($n_num > $max_reads_with_n) {
 				$max_reads_with_n = $n_num;
-				if ($opts{verbose}) {
+				if ($$opts{verbose}) {
 					print STDOUT "\nSample with $n_num Ns: $seq_fasta\n\n";
 				}
 			}
 			next; # reads containing Ns are discarded
 		}
-		if (length($seq_fasta) >= $opts{length}) {
-			$seq = substr($seq_fasta,0,($opts{length}-1));
+		if (length($seq_fasta) >= $$opts{length}) {
+			$seq = substr($seq_fasta,0,($$opts{length}-1));
 		} else {
-			print STDOUT "$seq_name was shorter than ".$opts{length}." bp\n";
+			print STDOUT "$seq_name was shorter than ".$$opts{length}." bp\n";
 			next;
 		}
 		
 		# ask for the aliquot position in the matrix (column number)
-		$tag_position = int($tags{uc($tag)});
+		$tag_position = int($$tags{uc($tag_seq)});
 		
 		# save markers in hash and count their ocurrence in each aliquot
 		if (!$markers{$seq}) {
-			my @tag_num=(0) x scalar(keys(%tags));
+			my @tag_num=(0) x scalar(keys(%$tags));
 			$markers{$seq} = \@tag_num;
 			$markers{$seq}[$tag_position] = 1;
 			$marker_name{$seq}=$seq_name;
@@ -273,7 +274,7 @@ sub read_fasta {
 		}
 		# print "$tag: pos: $tag_position --> @{$markers{$seq}}\n";
 		
-		if ($opts{verbose}) {
+		if ($$opts{verbose}) {
 			if ($counter % 100000 == 0) {
 				print "$counter ".scalar(keys %markers)."\n";
 			}
@@ -281,7 +282,7 @@ sub read_fasta {
 	}
 	my $aliquot_read_mean = sprintf("%.2f",($counter/scalar(keys %reads_by_aliquot)));
 	
-	if ($opts{verbose}) {
+	if ($$opts{verbose}) {
 		print STDOUT "$counter ".scalar(keys %markers)."\n";
 		print STDOUT "\n$reads_with_n_counter reads containing Ns were discarded\n";
 		print STDOUT "Maximum number of Ns in a read: $max_reads_with_n\n";
@@ -304,11 +305,11 @@ sub read_fasta {
 		
 		my $aliq_percent = sprintf("%.2f",($reads_by_aliquot{$aliq}*100/$aliquot_read_mean));
 		
-		if ($aliq_percent < $opts{percentage}) {
-			if ($opts{verbose}) {
+		if ($aliq_percent < $$opts{percentage}) {
+			if ($$opts{verbose}) {
 				print STDOUT "$aliq\t$reads_by_aliquot{$aliq} --> $aliq_percent% of average, $aliq will be removed\n";
 			}
-			$discarded_aliquots{int($tags{uc($aliq)})} = 1;
+			$discarded_aliquots{int($$tags{uc($aliq)})} = 1;
 			
 			#------------- appending to stats file discarded aliquots
 			print $stats_fh "$aliq\t$reads_by_aliquot{$aliq} --> $aliq_percent% of average, $aliq will be removed\n";
@@ -325,21 +326,12 @@ sub read_fasta {
 
 sub print_matrix {
 	
-	my $opt_h = shift;
-	my $tag_h = shift;
-	my $markers_h = shift;
-	my $markers_names_h = shift;
-	my $bad_aliq_h = shift;
+	my $opts = shift;
+	my $tags = shift;
+	my $markers = shift;
+	my $marker_name = shift;
+	my $discarded_aliquots = shift;
 	
-	my %opts = %$opt_h;
-	my %tags = %$tag_h;
-	my %markers = %$markers_h;
-	my %marker_name = %$markers_names_h;
-	my %discarded_aliquots = %$bad_aliq_h;
-	
-	my $m_num = sprintf("%07d", 0);
-	open (my $markers_fh, ">output/markers_seqs.txt") || die ("\nERROR: the file 'output/markers_seqs.txt' could not be created\n");
-
 	my $matrix_line = '';
 	my @aliquot_reads = (0)x49;
 	my $useful_markers = 0;
@@ -348,38 +340,28 @@ sub print_matrix {
 	my @matrix_text;
 	my @rh_matrix_text;
 	
-	# foreach my $aliq (sort{$tags{$a} <=> $tags{$b}} keys %tags) {
-	# 	my $tmp_key = $tags{$aliq};
-	# 	if (!$discarded_aliquots{$tmp_key}) {
-	# 		$matrix_head = "$matrix_head\t".uc($aliq);
-	# 	# } else {
-	# 	# 	print "$aliq at $tags{$aliq} was no printed in the head\n";
-	# 	}
-	# }
-	# Aliquots order in the matrix
-	# push(@matrix_text,$matrix_head);
-	# print $matrix_fh "$matrix_head\n";
+	my $m_num = sprintf("%07d", 0);
+	open (my $markers_fh, ">output/markers_seqs.txt") || die ("\nERROR: the file 'output/markers_seqs.txt' could not be created\n");
 	
 	# each marker
-	foreach my $marker (keys %markers) {
+	foreach my $marker (keys %$markers) {
 		
 		# each aliquot
-		foreach my $i (0 .. $#{$markers{$marker}}) {
+		foreach my $i (0 .. $#{$$markers{$marker}}) {
 			
-			if (!$discarded_aliquots{$i}) {
-				if ($markers{$marker}[$i] >= $opts{reads}) {
-					# $aliquot_reads[$i]++;
-					$markers{$marker}[$i] = 1;
+			if (!$$discarded_aliquots{$i}) {
+				if ($$markers{$marker}[$i] >= $$opts{reads}) {
+					$$markers{$marker}[$i] = 1;
 					$aliquots_num++;
 				} else {
-					$markers{$marker}[$i] = 0;
+					$$markers{$marker}[$i] = 0;
 				}
-				$matrix_line = "${matrix_line}$markers{$marker}[$i]";
+				$matrix_line = "${matrix_line}$$markers{$marker}[$i]";
 			}
 		}
-		if ($aliquots_num >= $opts{aliquots}) {
+		if ($aliquots_num >= $$opts{aliquots}) {
 			$m_num++;
-			print $markers_fh "m$m_num\t$marker_name{$marker}\t$marker\n";
+			print $markers_fh "m$m_num\t$$marker_name{$marker}\t$marker\n";
 			$useful_markers++;
 			
 			# save data in Carthagene format
@@ -398,7 +380,7 @@ sub print_matrix {
 	
 	# print Carthagene input
 	print $matrix_fh "data type radiated hybrid\n";
-	print $matrix_fh "".(scalar(keys(%tags)) - scalar(keys(%discarded_aliquots)))." $useful_markers 0 0 0=A 1=H\n";
+	print $matrix_fh "".(scalar(keys(%$tags)) - scalar(keys(%$discarded_aliquots)))." $useful_markers 0 0 0=A 1=H\n";
 	print $matrix_fh join("\n", @matrix_text);
 	
 	# print rh_tsp_map input
@@ -409,17 +391,17 @@ sub print_matrix {
 	open (my $stats_fh, ">>output/get_happy_matrix_stats.txt") || die ("\nERROR: the file 'output/get_happy_matrix_stats.txt' could not be opened\n");
 	
 	print STDOUT "\n$useful_markers useful markers were selected after applying all filters:\n";
-	print STDOUT "-->  Selected markers appeared at least in ".$opts{aliquots}." aliquots\n";
-	print STDOUT "-->  Selected markers were represented at least by ".$opts{reads}." reads in these aliquots\n";
-	print STDOUT "-->  Aliquots under ".$opts{percentage}."% of the average of reads/aliquot were removed\n";
-	print STDOUT "-->  Reads shorter than ".$opts{length}." bp were discarded\n";
+	print STDOUT "-->  Selected markers appeared at least in ".$$opts{aliquots}." aliquots\n";
+	print STDOUT "-->  Selected markers were represented at least by ".$$opts{reads}." reads in these aliquots\n";
+	print STDOUT "-->  Aliquots under ".$$opts{percentage}."% of the average of reads/aliquot were removed\n";
+	print STDOUT "-->  Reads shorter than ".$$opts{length}." bp were discarded\n";
 	print STDOUT "-->  Reads containing Ns were discarded\n";
 
 	print $stats_fh "\n$useful_markers useful markers were selected after applying all filters:\n";
-	print $stats_fh "-->  Selected markers appeared at least in ".$opts{aliquots}." aliquots\n";
-	print $stats_fh "-->  Selected markers were represented at least by ".$opts{reads}." reads in these aliquots\n";
-	print $stats_fh "-->  Aliquots under ".$opts{percentage}."% of the average of reads/aliquot were removed\n";
-	print $stats_fh "-->  Reads shorter than ".$opts{length}." bp were discarded\n";
+	print $stats_fh "-->  Selected markers appeared at least in ".$$opts{aliquots}." aliquots\n";
+	print $stats_fh "-->  Selected markers were represented at least by ".$$opts{reads}." reads in these aliquots\n";
+	print $stats_fh "-->  Aliquots under ".$$opts{percentage}."% of the average of reads/aliquot were removed\n";
+	print $stats_fh "-->  Reads shorter than ".$$opts{length}." bp were discarded\n";
 	print $stats_fh "-->  Reads containing Ns were discarded\n";
 
 	close($markers_fh);
@@ -432,16 +414,12 @@ sub print_matrix {
 ################################################################################
 
 # ------------------------------------------------------------------------------ loading tags
-my ($tags_hash, $file_head) = load_tags($Options{tags});
-my %tags = %$tags_hash;
+my ($tags, $file_head) = load_tags($Options{tags});
 
 # ------------------------------------------------------------------------------ read fasta
-my ($markers_h,$markers_names_h,$bad_aliquots_h) = read_fasta(\%Options, \%tags);
-my %markers = %$markers_h;
-my %markers_names = %$markers_names_h;
-my %bad_aliquots = %$bad_aliquots_h;
+my ($markers, $markers_names, $bad_aliquots) = read_fasta(\%Options, $tags);
 
 # ------------------------------------------------------------------------------ get the matrix
-print_matrix(\%Options,\%tags,\%markers,\%markers_names,\%bad_aliquots);
+print_matrix(\%Options, $tags, $markers, $markers_names, $bad_aliquots);
 
 

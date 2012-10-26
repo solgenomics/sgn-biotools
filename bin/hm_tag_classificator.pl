@@ -28,14 +28,14 @@ use threads;
 #                               LOAD & CHECKING                                #
 ################################################################################
 
-
 if (!$ARGV[0]) {
 	help_msg();
 	exit;
 }
 
-# 12 Oct 2012 -> kepp RS in markers seq
-my $VERSION = "0.0.2";
+# v0.0.2 --12 Oct 2012-- kepp RS in markers seq
+# v0.0.3 --25 Oct 2012-- memory usage was improved fixing duplicated variables that were referenced
+my $VERSION = "0.0.3";
 
 # ------------------------------------------------------------------------------ store options in hash
 my %Options=get_options_and_params();
@@ -79,22 +79,10 @@ sub get_options_and_params {
 
 # check if the options and parameters are right and sufficient for the execution
 sub check_options {
-	my $opt = shift;
-	my %options = %$opt;
-	
-	if ($options{verbose}) {
-		version_msg();
-		
-		print STDERR "\n-------------- PARAMETERS AND OPTION CHOSEN --------------\n";
-		foreach my $opt (keys %options) {
-			my $sp = (10 - length($opt));
-			print STDERR "${opt}".(" "x$sp)."  ==>  $options{$opt}\n";
-		}
-		print STDERR "----------------------------------------------------------\n";
-	}
+	my $options = shift;
 	
 	# -------------------------------------------- check mandatory options
-	if ((!$options{fastq}) || (!$options{tags})) {
+	if ((!$$options{fastq}) || (!$$options{tags})) {
 		print "\nERROR: a fasta file and a list of tags must be provided\n\n";
 		
 		help_msg();
@@ -102,10 +90,10 @@ sub check_options {
 	}
 	
 	# -------------------------------------------- check files
-	check_file_exist($options{fastq},"File ".$options{fastq}." was not found. A file with the marker reads is required");
-	check_file_exist($options{tags},"File ".$options{tags}." was not found. A file with tags used for each aliquot of the happy mapping is required:\n\nacag\nactg\nagac\n...\n");
+	check_file_exist($$options{fastq},"File ".$$options{fastq}." was not found. A file with the marker reads is required");
+	check_file_exist($$options{tags},"File ".$$options{tags}." was not found. A file with tags used for each aliquot of the happy mapping is required:\n\nacag\nactg\nagac\n...\n");
 	
-	if ($options{verbose}) {
+	if ($$options{verbose}) {
 		print STDERR "--- YOUR PARAMETERS AND OPTIONS WERE CORRECTLY CHECKED ---\n";
 	}
 	
@@ -118,6 +106,18 @@ sub check_options {
 	}
 	mkdir ("output");
 	mkdir ("tmp_files");
+	
+	# -------------------------------------------- print chosen options
+	if ($$options{verbose}) {
+		version_msg();
+		
+		print STDERR "\n-------------- PARAMETERS AND OPTION CHOSEN --------------\n";
+		foreach my $opt (keys %$options) {
+			my $sp = (10 - length($opt));
+			print STDERR "${opt}".(" "x$sp)."  ==>  $$options{$opt}\n";
+		}
+		print STDERR "----------------------------------------------------------\n";
+	}
 }
 
 sub check_file_exist {
@@ -184,19 +184,10 @@ sub load_tags{
 # split fasta in chunks and save it into an array for parrallel execution
 sub split_fasta {
 	
-	my $opt_h = shift;
-	my $tag_h = shift;
+	my $opts = shift;
+	my $tags = shift;
 	
-	my %opts = %$opt_h;
-	my %tags = %$tag_h;
-	
-	my $threads = $opts{cores};
-	my $min_length = $opts{length};
-	my $r_site = $opts{r_site};
-	my $fasta_file = $opts{fastq};
-	my $v = $opts{verbose};
-	
-	my $chunk_lines = ($opts{seqs}*4);
+	my $chunk_lines = ($$opts{seqs}*4);
 	my $line_counter = 0; # useful to create the chunks
 	my $counter = 0; # to create fasta tmp files
 	my @chunk; # for saving the chunks
@@ -207,7 +198,7 @@ sub split_fasta {
 	
 	open (my $thread_fh, ">tmp_files/tmp_threads_file.txt") || die ("ERROR: was not possible to create 'tmp_files/tmp_threads_file.txt'");
 	open (my $error_fh, ">output/seqs_without_tag.txt") || die ("ERROR: was not possible to create 'output/seqs_without_tag.txt'");
-	open (my $fq_fh, $fasta_file) || die ("\nERROR: the file '$fasta_file' could not be found\n");
+	open (my $fq_fh, $$opts{fastq}) || die ("\nERROR: the file ".$$opts{fastq}." could not be found\n");
 	
 	while (my $line = <$fq_fh>) {
 		chomp($line);
@@ -223,10 +214,10 @@ sub split_fasta {
 			$running_thrs = (scalar($#running)+1);
 			
 			$string_chunk = join("\n",@chunk);
-			@thr_args=($string_chunk,\%tags,$r_site,$counter,$min_length);
+			@thr_args=($string_chunk,$tags,$$opts{r_site},$counter,$$opts{length});
 			
 			# do not start more threads until we finished the ones we are using
-			while ($running_thrs >= $threads) {
+			while ($running_thrs >= $$opts{cores}) {
 				sleep(1);
 				@running = threads->list(threads::running);
 				$running_thrs = (scalar($#running)+1);
@@ -235,7 +226,7 @@ sub split_fasta {
 			my $thr = threads->create('one_thread', \@thr_args);
 			push(@array_thr, $thr);
 			
-			if($v) {
+			if($$opts{verbose}) {
 				print "threads running: ".($running_thrs+1).", seqs loaded: ".($line_counter/4)."\n";
 			}
 			
@@ -246,12 +237,12 @@ sub split_fasta {
 	# ---------------------------------------------rest of the sequences are analised
 	$string_chunk = join("\n",@chunk);
 	$counter++;
-	@thr_args=($string_chunk,\%tags,$r_site,$counter,$min_length);
+	@thr_args=($string_chunk,$tags,$$opts{r_site},$counter,$$opts{length});
 	my $thr = threads->create('one_thread', \@thr_args);
 	push(@array_thr, $thr);
 	close_thread(\@array_thr);
 	
-	if($v) {
+	if($$opts{verbose}) {
 		print "threads running: $running_thrs, seqs loaded: ".($line_counter/4)."\n";
 	}
 	# -------------------------------------------------------------------------------
@@ -276,11 +267,9 @@ sub split_fasta {
 # analysis of sequences in each thread
 sub one_thread {
 	my $input_argv = shift;
-	my @argv_a = @$input_argv;
 	
-	my ($string_fasta, $tags_h, $r_site, $pid, $min_length) = @argv_a;
+	my ($string_fasta, $tags, $r_site, $pid, $min_length) = @$input_argv;
 	
-	my %tags = %$tags_h;
 	my $tag_out_fh='';
 	my %saved_seqs;
 	my %no_tag_seqs;
@@ -304,7 +293,7 @@ sub one_thread {
 			my $rest_of_Seq = $2;
 			
 			# sequences with a right tag (contained in our happy tags file)
-			if ($tags{uc($tag)}) {
+			if ($$tags{uc($tag)}) {
 				$seq_name = "${tag}_${seq_name}";
 				if ($seq_fasta =~ m/(.*${tag}${r_site})/i){
 					$seq_fasta =~ s/.*${tag}${r_site}/$r_site/i;
@@ -327,7 +316,7 @@ sub one_thread {
 				if ($rest_of_Seq =~ /([a-z]{4})${r_site}/i){
 					my $tag2 = $1;
 					
-					if ($tags{uc($tag2)}) { # second tag is right
+					if ($$tags{uc($tag2)}) { # second tag is right
 						$seq_name = "${tag2}_${seq_name}";
 						if ($seq_fasta =~ m/(.*${tag2}${r_site})/i){
 							$seq_fasta =~ s/.*${tag2}${r_site}/$r_site/i;
@@ -379,10 +368,9 @@ sub one_thread {
 
 # close threads with finished jobs
 sub close_thread {
-	my $thr_a = shift;
-	my @array_thr = @$thr_a;
+	my $array_thr = shift;
 	
-	foreach my $thr (@array_thr) {
+	foreach my $thr (@$array_thr) {
 		if ($thr->is_joinable()) {
 			$thr->join();
 		}
@@ -448,11 +436,10 @@ sub print_stats {
 ################################################################################
 
 # ------------------------------------------------------------------------------ loading tags
-my $tags_hash = load_tags($Options{tags});
-my %tags = %$tags_hash;
+my $tags = load_tags($Options{tags});
 
 # ------------------------------------------------------------------------------ split fasta and send chunks to several cores
-my ($line_counter) = split_fasta(\%Options, \%tags);
+my $line_counter = split_fasta(\%Options, $tags);
 
 # ------------------------------------------------------------------------------ reading and printing stats
 print_stats($line_counter, $Options{verbose});
