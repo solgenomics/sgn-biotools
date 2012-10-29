@@ -57,7 +57,7 @@ sub get_options_and_params {
 	$h{dna_copies} = 100;
 	$h{extraction_size} = 40000;
 	$h{genome_percent} = 0.7;
-	$h{std_dev} = 10000;
+	$h{std_dev} = 4000;
 	$h{reads_length} = 69;
 	$h{total_rs} = 'C^TGCAG';
 	
@@ -82,6 +82,17 @@ sub check_options {
 	my $opt = shift;
 	my %options = %$opt;
 	
+	if ($options{verbose}) {
+		version_msg();
+		
+		print STDERR "\n-------------- PARAMETERS AND OPTION CHOSEN --------------\n";
+		foreach my $opt (keys %options) {
+			my $sp = (10 - length($opt));
+			print STDERR "${opt}".(" "x$sp)."  ==>  $options{$opt}\n";
+		}
+		print STDERR "----------------------------------------------------------\n";
+	}
+	
 	# -------------------------------------------- check mandatory options
 	if (!$options{fasta}) {
 		print "\nERROR: a fasta file must be provided\n\n";
@@ -96,19 +107,6 @@ sub check_options {
 	
 	# -------------------------------------------- check files
 	check_file_exist($options{fasta},"File ".$options{fasta}." was not found. A file with the marker reads is required");
-	check_file_exist($options{aliquot_tags},"File ".$options{aliquot_tags}." was not found. A file with the marker reads is required");
-	
-	
-	if ($options{verbose}) {
-		version_msg();
-		
-		print STDERR "\n-------------- PARAMETERS AND OPTION CHOSEN --------------\n";
-		foreach my $opt (keys %options) {
-			my $sp = (10 - length($opt));
-			print STDERR "${opt}".(" "x$sp)."  ==>  $options{$opt}\n";
-		}
-		print STDERR "----------------------------------------------------------\n";
-	}
 	
 	if ($options{verbose}) {
 		print STDERR "--- YOUR PARAMETERS AND OPTIONS WERE CORRECTLY CHECKED ---\n";
@@ -152,7 +150,7 @@ Usage: $0 -f <file.fasta> [other options or parameters]
 
   -dna_copies|d <integer>       Number of copies of the genome (default=100)
   -extraction_size|e <integer>  Average size of DNA after extraction (default=40000bp)
-  -std_dev|s <integer>          Standard deviation for DNA size (default=10000bp)
+  -std_dev|s <integer>          Standard deviation for DNA size (default=4000bp)
 
   -genome_percent|g <float>     Percentage of genome included by aliquot (default=0.7)
   -total_rs|t <string>          Restriction site for a total digestion (default='C^TGCAG')
@@ -176,6 +174,7 @@ sub dna_extraction {
 	
 	my @dna;
 	my $dna_size=0;
+	my $random_seed = int($$opts{extraction_size}/$$opts{dna_copies});
 	my $input_fastq = Bio::SeqIO->new(-file => $$opts{fasta}, -format => 'fasta');
 	
 	# foreach read in the genome fasta file
@@ -188,6 +187,7 @@ sub dna_extraction {
 			if ($$opts{verbose}) {print "Extracting DNA copy $i\n";}
 			
 			my $seq_fasta = $original_fasta;
+			$seq_fasta = substr($seq_fasta,($random_seed*($i-1)),length($seq_fasta));
 			my $dna_size = 0;
 			# As the sequence is trimmed the fragments are saved in an array
 			while(length($seq_fasta) >= $dna_size) {
