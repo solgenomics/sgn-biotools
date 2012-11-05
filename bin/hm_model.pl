@@ -60,6 +60,7 @@ sub get_options_and_params {
 	$h{std_dev} = 4000;
 	$h{reads_length} = 69;
 	$h{total_rs} = 'C^TGCAG';
+	$h{output} = 'happy_reads.fasta';
 	
 	GetOptions( \%h,
 		"aliquot_tags|a=s",
@@ -70,6 +71,7 @@ sub get_options_and_params {
 		"std_dev|s=i",
 		"reads_length|r=i",
 		"total_rs|t=s",
+		"output|o=s",
 		"help|h",
 		"verbose",
 		"version|v"
@@ -113,10 +115,10 @@ sub check_options {
 	}
 	
 	# -------------------------------------------- removing old files and making new directories
-	if (-e "output/") {
-		`rm -rf output`;
-	}
-	mkdir ("output");
+	# if (-e "$options{output}/") {
+	# 	`rm -rf $options{output}`;
+	# }
+	# mkdir ($options{output});
 }
 
 sub check_file_exist {
@@ -139,7 +141,7 @@ sub help_msg {
 
     print <<END;
 
-Usage: $0 -f <file.fasta> [other options or parameters]
+Usage: $0 -f <file.fasta> -a <aliquots_file.txt> [other options or parameters]
 
   *** MANDATORY OPTIONS ****************************************************************
   
@@ -155,7 +157,8 @@ Usage: $0 -f <file.fasta> [other options or parameters]
   -genome_percent|g <float>     Percentage of genome included by aliquot (default=0.7)
   -total_rs|t <string>          Restriction site for a total digestion (default='C^TGCAG')
   -reads_length|r <integer>     Final reads length (default=69)
-                                
+  
+  -output|o <string>            Output file name (default='happy_reads.fasta')                              
   -verbose                      Verbose mode
   -version|v                    Shows program version
   -help|h                       Shows this help
@@ -286,7 +289,7 @@ sub print_happy_reads {
 	my $read_length = ($$opts{reads_length} - length($rs2));
 	
 	# Lets print the reads
-	open (my $o_fh, ">output/happy_reads.fasta") || die ("\nERROR: the file 'output/happy_reads.fasta' could not be found\n");
+	open (my $o_fh, ">$$opts{output}") || die ("\nERROR: the file '$$opts{output}' could not be found\n");
 	
 	my $counter = 0;
 	foreach my $tag (keys %$aliq_HoA) {
