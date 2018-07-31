@@ -1,4 +1,22 @@
 
+=head1 NAME
+
+stitch.pl - stitch together fasta files from ordered pieces
+
+=head1 DESCRIPTION
+
+perl stitch.pl [fasta file] [match file blast m8]
+
+Output will be in files named after chromosomes: stitched[chr-nr].fa
+
+
+=head1 AUTHOR
+
+Lukas Mueller <lam87@cornell.edu>
+
+=cut
+
+
 use strict;
 use Bio::SeqIO;
 use File::Slurp qw | read_file |;
@@ -94,7 +112,7 @@ foreach my $line (@sorted_matches) {
     if ($subject ne $previous_subject) { 
 
 	if ($open_file_handle) { close($H); }
-	open($H, ">", "stitched_acgc_pacbio_chr$subject.fa") || die "Can't open chr file\n";
+	open($H, ">", "stitched_chr$subject.fa") || die "Can't open chr file\n";
 	$open_file_handle=1;
 	print $H ">seq$subject\n";
 	print "\n>seq$subject\n";
@@ -126,5 +144,4 @@ close($H);
 
 print STDERR "Done.\n";
 
-print STDERR "Done.\n";
     
